@@ -7,38 +7,25 @@ from app.extraction import extract_metadata, validate_fetch_url
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-class FakeResponse:
-    def __init__(self, body: str, content_type: str = "text/html"):
-        self.content = body.encode()
-        self.text = body
-        self.headers = {"content-type": content_type}
 
-    def raise_for_status(self):
-        return None
-
-    @property
-    def is_redirect(self):
-        return False
-
-
-class FakeClient:
-    def __init__(self, response, **kwargs):
-        self.response = response
-        self.options = kwargs
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return None
-
-    def get(self, url, **kwargs):
-        return self.response
 
 
 def result_for(monkeypatch, filename, url="https://example.com/jobs/1"):
-    response = FakeResponse((FIXTURES / filename).read_text())
-    monkeypatch.setattr(httpx, "Client", lambda *args, **kwargs: FakeClient(response, **kwargs))
+    content = (FIXTURES / filename).read_bytes()
+    
+    def handler(request):
+        return httpx.Response(200, content=content, headers={"content-type": "text/html"})
+        
+    transport = httpx.MockTransport(handler)
+    
+    if not hasattr(httpx, "_original_client"):
+        httpx._original_client = httpx.Client
+        
+    def mock_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return httpx._original_client(*args, **kwargs)
+        
+    monkeypatch.setattr(httpx, "Client", mock_client)
     return extract_metadata(url)
 
 
