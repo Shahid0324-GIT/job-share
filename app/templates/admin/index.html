@@ -30,54 +30,54 @@
         <button class="tab" data-tab="friends" type="button">Friends</button>
         <button class="tab" data-tab="batches" type="button">Batches</button>
       </nav>
-      <section class="panel add-panel">
-        <div class="panel-heading">
-          <span class="step">01</span>
-          <div>
-            <p class="eyebrow">INBOX</p>
-            <h2>Add a job</h2>
-          </div>
-        </div>
-        <form id="job-form">
-          <input type="hidden" name="csrf" value="{{ csrf }}" /><label
-            >Paste job URL<input
-              id="job-url"
-              type="url"
-              placeholder="https://..."
-              required /></label
-          ><button type="submit">
-            Fetch details <span aria-hidden="true">↗</span>
-          </button>
-          <p id="job-message" class="message"></p>
-        </form>
-        <form id="job-preview" class="preview-form" hidden>
-          <div class="preview-heading">
-            <p class="eyebrow">EXTRACTION PREVIEW</p>
-            <strong id="preview-confidence"></strong>
-          </div>
-          <label
-            >Company<input id="preview-company" type="text" maxlength="255"
-          /></label>
-          <label
-            >Role<input id="preview-role" type="text" maxlength="255"
-          /></label>
-          <label
-            >Location<input id="preview-location" type="text" maxlength="255"
-          /></label>
-          <label
-            >Source<input id="preview-source" type="text" maxlength="100"
-          /></label>
-          <label
-            >Description<textarea
-              id="preview-description"
-              maxlength="20000"
-            ></textarea>
-          </label>
-          <p id="preview-warnings" class="message"></p>
-          <button type="submit">Save job</button>
-        </form>
-      </section>
       <section class="tab-panel active" data-panel="jobs">
+        <section class="panel add-panel">
+          <div class="panel-heading">
+            <span class="step">01</span>
+            <div>
+              <p class="eyebrow">INBOX</p>
+              <h2>Add a job</h2>
+            </div>
+          </div>
+          <form id="job-form">
+            <input type="hidden" name="csrf" value="{{ csrf }}" /><label
+              >Paste job URL<input
+                id="job-url"
+                type="url"
+                placeholder="https://..."
+                required /></label
+            ><button type="submit">
+              Fetch details <span aria-hidden="true">↗</span>
+            </button>
+            <p id="job-message" class="message"></p>
+          </form>
+          <form id="job-preview" class="preview-form" hidden>
+            <div class="preview-heading">
+              <p class="eyebrow">EXTRACTION PREVIEW</p>
+              <strong id="preview-confidence"></strong>
+            </div>
+            <label
+              >Company<input id="preview-company" type="text" maxlength="255"
+            /></label>
+            <label
+              >Role<input id="preview-role" type="text" maxlength="255"
+            /></label>
+            <label
+              >Location<input id="preview-location" type="text" maxlength="255"
+            /></label>
+            <label
+              >Source<input id="preview-source" type="text" maxlength="100"
+            /></label>
+            <label
+              >Description<textarea
+                id="preview-description"
+                maxlength="20000"
+              ></textarea>
+            </label>
+            <p id="preview-warnings" class="message"></p>
+            <button type="submit">Save job</button>
+          </form>
+        </section>
         <div class="section-head">
           <div>
             <p class="eyebrow">COLLECTION</p>
@@ -85,42 +85,56 @@
           </div>
           <button id="batch-button" type="button">Create batch</button>
         </div>
-        <div class="job-grid">
-          {% for job in jobs %}
-          <article class="job-card">
-            <input class="job-select" type="checkbox" value="{{ job.id }}" />
-            <h3>{{ job.role or 'Untitled role' }}</h3>
-            <p>
-              {{ job.company or 'Company not set' }} · {{ job.location or
-              'Location not set' }}
-            </p>
-            <small>{{ job.source }} · {{ job.url }}</small>
-            <div class="actions">
-              <button
-                class="edit-job quiet"
-                data-id="{{ job.id }}"
-                data-url="{{ job.url }}"
-                data-company="{{ job.company or '' }}"
-                data-role="{{ job.role or '' }}"
-                data-location="{{ job.location or '' }}"
-                data-source="{{ job.source }}"
-                type="button"
-              >
-                Edit details
-              </button>
-              <button
-                class="delete-job quiet"
-                data-id="{{ job.id }}"
-                type="button"
-              >
-                Archive
-              </button>
+        {% for group in job_groups %}
+        <div class="date-group" data-date="{{ group.date_key }}">
+          <div class="date-separator">
+            <div class="date-separator-info">
+              <span class="date-tag">{{ group.title }}</span>
+              <span class="date-count">{{ group.jobs|length }} {{ 'job' if group.jobs|length == 1 else 'jobs' }}</span>
             </div>
-          </article>
-          {% else %}
-          <p class="muted">No jobs yet.</p>
-          {% endfor %}
+            <label class="date-select-all-label" title="Select all jobs for this date">
+              <input class="date-select-all" type="checkbox" data-date="{{ group.date_key }}" />
+              <span>Select all</span>
+            </label>
+          </div>
+          <div class="job-grid">
+            {% for job in group.jobs %}
+            <article class="job-card" data-job-id="{{ job.id }}">
+              <input class="job-select" type="checkbox" value="{{ job.id }}" />
+              <h3>{{ job.role or 'Untitled role' }}</h3>
+              <p>
+                {{ job.company or 'Company not set' }} · {{ job.location or
+                'Location not set' }}
+              </p>
+              <small>{{ job.source }} · {{ job.url }}</small>
+              <div class="actions">
+                <button
+                  class="edit-job quiet"
+                  data-id="{{ job.id }}"
+                  data-url="{{ job.url }}"
+                  data-company="{{ job.company or '' }}"
+                  data-role="{{ job.role or '' }}"
+                  data-location="{{ job.location or '' }}"
+                  data-source="{{ job.source }}"
+                  type="button"
+                >
+                  Edit details
+                </button>
+                <button
+                  class="delete-job quiet"
+                  data-id="{{ job.id }}"
+                  type="button"
+                >
+                  Archive
+                </button>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
         </div>
+        {% else %}
+        <p class="muted">No jobs yet.</p>
+        {% endfor %}
       </section>
       <section class="tab-panel" data-panel="friends">
         <div class="section-head">

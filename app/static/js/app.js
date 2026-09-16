@@ -101,6 +101,55 @@ document.querySelectorAll(".edit-job").forEach((button) =>
     window.location.reload();
   }),
 );
+function updateDateSelectAll(group) {
+  if (!group) return;
+  const selectAll = group.querySelector(".date-select-all");
+  if (!selectAll) return;
+  const checkboxes = [...group.querySelectorAll(".job-select")];
+  const checkedCount = checkboxes.filter((cb) => cb.checked).length;
+  selectAll.checked = checkedCount > 0 && checkedCount === checkboxes.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+}
+document.querySelectorAll(".date-group").forEach((group) => {
+  const selectAll = group.querySelector(".date-select-all");
+  if (selectAll) {
+    selectAll.addEventListener("change", () => {
+      const isChecked = selectAll.checked;
+      group.querySelectorAll(".job-select").forEach((cb) => {
+        cb.checked = isChecked;
+        const card = cb.closest(".job-card");
+        if (card) card.classList.toggle("selected", isChecked);
+      });
+    });
+  }
+});
+document.querySelectorAll(".job-card").forEach((card) => {
+  const checkbox = card.querySelector(".job-select");
+  if (!checkbox) return;
+  if (checkbox.checked) card.classList.add("selected");
+  card.addEventListener("click", (event) => {
+    if (
+      event.target.closest(".actions") ||
+      event.target.closest("button") ||
+      event.target.closest("a")
+    ) {
+      return;
+    }
+    if (event.target === checkbox) {
+      card.classList.toggle("selected", checkbox.checked);
+      updateDateSelectAll(card.closest(".date-group"));
+      return;
+    }
+    checkbox.checked = !checkbox.checked;
+    card.classList.toggle("selected", checkbox.checked);
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+    updateDateSelectAll(card.closest(".date-group"));
+  });
+  checkbox.addEventListener("change", () => {
+    card.classList.toggle("selected", checkbox.checked);
+    updateDateSelectAll(card.closest(".date-group"));
+  });
+});
 const batchButton = document.querySelector("#batch-button");
 if (batchButton)
   batchButton.addEventListener("click", async () => {

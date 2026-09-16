@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -84,13 +84,59 @@ def logout(request: Request, csrf: str = Form(...)):
     return response
 
 
+def group_jobs_by_date(jobs: list[Job]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    now = datetime.now(timezone.utc)
+    today_date = now.date()
+    yesterday_date = today_date - timedelta(days=1)
+
+    for job in jobs:
+        created = job.created_at
+        if created is None:
+            created = now
+        elif created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+
+        job_date = created.date()
+        date_key = job_date.isoformat()
+
+        if date_key not in groups:
+            if job_date == today_date:
+                title = f"Today · {created.strftime('%B %d, %Y')}"
+            elif job_date == yesterday_date:
+                title = f"Yesterday · {created.strftime('%B %d, %Y')}"
+            else:
+                title = created.strftime("%B %d, %Y")
+
+            groups[date_key] = {
+                "date_key": date_key,
+                "title": title,
+                "jobs": [],
+            }
+        groups[date_key]["jobs"].append(job)
+
+    return list(groups.values())
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, db: Session = Depends(get_db)):
     admin_required(request)
     jobs = db.scalars(select(Job).where(Job.archived_at.is_(None)).order_by(Job.created_at.desc()).limit(100)).all()
+    job_groups = group_jobs_by_date(jobs)
     friends = db.scalars(select(Friend).order_by(Friend.name)).all()
     batches = db.scalars(select(Batch).options(joinedload(Batch.jobs)).order_by(Batch.created_at.desc())).unique().all()
-    return templates.TemplateResponse(request=request, name="admin/index.html", context={"jobs": jobs, "friends": friends, "batches": batches, "csrf": request.session.get("csrf"), "base_url": str(request.base_url).rstrip("/")})
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/index.html",
+        context={
+            "jobs": jobs,
+            "job_groups": job_groups,
+            "friends": friends,
+            "batches": batches,
+            "csrf": request.session.get("csrf"),
+            "base_url": str(request.base_url).rstrip("/"),
+        },
+    )
 
 
 @app.post("/api/admin/jobs/preview")

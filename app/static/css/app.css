@@ -218,6 +218,73 @@ textarea {
   font: inherit;
   resize: vertical;
 }
+.date-group {
+  margin-bottom: 2.8rem;
+}
+.date-separator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 1.2rem;
+}
+.date-separator-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.date-tag {
+  font-family: Georgia, serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.date-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+  border-radius: 2px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.date-select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink);
+  user-select: none;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+.date-select-all-label:hover {
+  border-color: var(--ink);
+}
+.date-select-all {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--coral);
+  cursor: pointer;
+}
+.date-group .job-grid {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 .job-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
@@ -227,6 +294,26 @@ textarea {
 .job-card {
   position: relative;
   padding: 1.25rem;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+.job-card:hover {
+  border-color: var(--ink);
+}
+.job-card.selected {
+  border-color: var(--coral);
+  background: #fffdf9;
+  box-shadow:
+    0 0 0 1px var(--coral),
+    0 14px 35px #f06f5218;
+}
+.job-card .actions {
+  cursor: default;
+  user-select: auto;
 }
 .job-card p,
 .job-card small,
@@ -248,7 +335,10 @@ textarea {
   right: 1rem;
   top: 1rem;
   width: 19px;
+  height: 19px;
+  margin: 0;
   accent-color: var(--coral);
+  cursor: pointer;
 }
 .actions {
   display: flex;

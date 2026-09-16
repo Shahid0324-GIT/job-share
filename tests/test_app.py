@@ -5,6 +5,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test-api.db"
 os.environ["ADMIN_PASSWORD"] = "test-password"
 os.environ["SECRET_KEY"] = "test-secret"
 
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -12,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base, get_db
 from app.extraction import ExtractionResult
 from app.models import Batch, BatchJob, Friend, FriendJob, Job
-from app.main import app
+from app.main import app, group_jobs_by_date
 import app.main as main_module
 from app.security import hash_token, new_token
 
@@ -147,3 +148,44 @@ def test_archived_job_is_retained_but_cannot_be_batched():
     history = db.get(FriendJob, {"friend_id": friend_id, "job_id": job_id})
     assert history is not None and history.status == "APPLIED"
     db.close()
+
+
+def test_group_jobs_by_date():
+    now = datetime.now(timezone.utc)
+    job_today_1 = Job(url="https://example.com/job1", source="Company Careers", role="Role 1", created_at=now)
+    job_today_2 = Job(url="https://example.com/job2", source="Company Careers", role="Role 2", created_at=now - timedelta(hours=1))
+    job_yesterday = Job(url="https://example.com/job3", source="Company Careers", role="Role 3", created_at=now - timedelta(days=1))
+    job_older = Job(url="https://example.com/job4", source="Company Careers", role="Role 4", created_at=datetime(2025, 1, 15, 12, 0, tzinfo=timezone.utc))
+
+    groups = group_jobs_by_date([job_today_1, job_today_2, job_yesterday, job_older])
+    assert len(groups) == 3
+    assert groups[0]["title"].startswith("Today")
+    assert len(groups[0]["jobs"]) == 2
+    assert groups[1]["title"].startswith("Yesterday")
+    assert len(groups[1]["jobs"]) == 1
+    assert groups[2]["title"] == "January 15, 2025"
+    assert len(groups[2]["jobs"]) == 1
+
+
+def test_admin_page_renders_date_groups_and_select_all():
+    db = TestingSession()
+    now = datetime.now(timezone.utc)
+    job1 = Job(url="https://example.com/date-job-1", source="Company Careers", role="Frontend Engineer", created_at=now)
+    job2 = Job(url="https://example.com/date-job-2", source="Company Careers", role="Backend Engineer", created_at=now - timedelta(days=2))
+    db.add_all([job1, job2])
+    db.commit()
+    db.close()
+
+    with TestClient(app) as client:
+        client.post("/admin/login", data={"password": "test-password"})
+        response = client.get("/admin")
+        assert response.status_code == 200
+        assert "date-group" in response.text
+        assert "date-separator" in response.text
+        assert "date-select-all" in response.text
+        assert "Frontend Engineer" in response.text
+        assert "Backend Engineer" in response.text
+        jobs_panel_start = response.text.find('data-panel="jobs"')
+        add_panel_start = response.text.find('class="panel add-panel"')
+        friends_panel_start = response.text.find('data-panel="friends"')
+        assert jobs_panel_start < add_panel_start < friends_panel_start
