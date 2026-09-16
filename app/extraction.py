@@ -127,8 +127,63 @@ def _extract_json_ld(soup: BeautifulSoup, result: ExtractionResult) -> bool:
         if isinstance(organization, dict):
             result.company = result.company or _clean(organization.get("name"))
         result.location = result.location or _location_text(posting.get("jobLocation"))
+        if not result.location and str(posting.get("jobLocationType", "")).upper() == "TELECOMMUTE":
+            result.location = "Remote"
         result.description = result.description or _clean(posting.get("description"), 20_000)
     return found
+
+
+def _extract_microdata(soup: BeautifulSoup, result: ExtractionResult) -> None:
+    values: dict[str, str] = {}
+    for element in soup.find_all(attrs={"itemprop": True}):
+        prop = str(element.get("itemprop", "")).lower()
+        if prop in {"title", "jobtitle", "hiringorganization", "joblocation", "description"}:
+            value = element.get("content") or element.get("datetime") or element.get_text(" ")
+            cleaned = _clean(value, 20_000 if prop == "description" else 255)
+            if cleaned and prop not in values:
+                values[prop] = cleaned
+    result.role = result.role or values.get("title") or values.get("jobtitle")
+    result.company = result.company or values.get("hiringorganization")
+    result.location = result.location or values.get("joblocation")
+    result.description = result.description or values.get("description")
+
+
+def _find_application_job(value: object) -> dict[str, object] | None:
+    if isinstance(value, list):
+        for item in value:
+            found = _find_application_job(item)
+            if found:
+                return found
+    elif isinstance(value, dict):
+        keys = {str(key).lower() for key in value}
+        has_role = keys.intersection({"title", "jobtitle", "job_title", "positiontitle"})
+        has_context = keys.intersection({"company", "companyname", "employer", "location", "joblocation"})
+        if has_role and has_context:
+            return value
+        for child in value.values():
+            found = _find_application_job(child)
+            if found:
+                return found
+    return None
+
+
+def _extract_application_state(soup: BeautifulSoup, result: ExtractionResult) -> None:
+    for script in soup.find_all("script"):
+        script_type = str(script.get("type", "")).lower()
+        if script_type not in {"application/json", "application/ld+json"} and not script.get("data-state"):
+            continue
+        try:
+            payload = json.loads(script.string or script.get_text())
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        job = _find_application_job(payload)
+        if not job:
+            continue
+        result.role = result.role or _clean(next((job.get(key) for key in ("title", "jobTitle", "job_title", "positionTitle") if job.get(key)), None))
+        result.company = result.company or _clean(next((job.get(key) for key in ("company", "companyName", "employer") if job.get(key)), None))
+        result.location = result.location or _location_text(next((job.get(key) for key in ("location", "jobLocation") if job.get(key)), None))
+        result.description = result.description or _clean(job.get("description"), 20_000)
+        return
 
 
 def _meta_values(soup: BeautifulSoup) -> dict[str, str]:
@@ -145,38 +200,53 @@ def _extract_meta(soup: BeautifulSoup, result: ExtractionResult) -> None:
     values = _meta_values(soup)
     meta_title = _clean(values.get("og:title") or values.get("twitter:title"))
     title_role, title_company = _title_parts(meta_title or "")
-    result.role = result.role or title_role or meta_title
+    generic_meta = (meta_title or "").lower().startswith(("careers at ", "careers |", "jobs at ", "join "))
+    result.role = result.role or title_role or (None if generic_meta else meta_title)
     result.company = result.company or title_company
     result.description = result.description or _clean(values.get("og:description") or values.get("twitter:description") or values.get("description"), 20_000)
     result.company = result.company or _clean(values.get("og:site_name"))
 
 
 def _semantic_text(soup: BeautifulSoup, terms: tuple[str, ...]) -> str | None:
-    for element in soup.find_all(True):
-        marker = " ".join(str(element.get(attribute, "")) for attribute in ("id", "class", "itemprop", "data-testid")).lower()
-        if any(term in marker for term in terms):
-            value = _clean(element.get_text(" "))
-            if value and len(value) <= 255:
-                return value
+    normalized_terms = {term.lower().replace("-", "_") for term in terms}
+    elements = soup.find_all(True)
+    for exact in (True, False):
+        for element in elements:
+            markers = []
+            for attribute in ("id", "class", "itemprop", "data-testid", "data-test", "aria-label"):
+                raw = element.get(attribute, "")
+                values = raw if isinstance(raw, list) else str(raw).split()
+                markers.extend(value.lower().replace("-", "_") for value in values)
+            match = any(marker in normalized_terms if exact else any(term in marker for term in normalized_terms) for marker in markers)
+            if match:
+                value = _clean(element.get_text(" "))
+                if value and len(value) <= 255:
+                    return value
     return None
 
 
 def _title_parts(title: str) -> tuple[str | None, str | None]:
-    parts = [part.strip() for part in re.split(r"\s+[|\u2013\u2014-]\s+", title) if part.strip()]
-    if len(parts) != 2:
-        return None, None
-    generic = {"careers", "jobs", "job", "careers page", "opportunities"}
-    if parts[0].lower() in generic or parts[1].lower() in generic:
+    parts = [part.strip() for part in re.split(r"\s*(?:\||\u2013|\u2014| - )\s*", title) if part.strip()]
+    generic = {"careers", "jobs", "job", "careers page", "opportunities", "join our team", "open positions"}
+    parts = [part for part in parts if part.lower() not in generic]
+    if len(parts) < 2:
         return None, None
     role_words = ("engineer", "developer", "manager", "designer", "analyst", "scientist", "recruiter", "intern", "director", "specialist", "consultant", "lead")
-    if any(word in parts[0].lower() for word in role_words):
-        return parts[0], parts[1]
-    if any(word in parts[1].lower() for word in role_words):
-        return parts[1], parts[0]
+    role_index = next((index for index, part in enumerate(parts) if any(word in part.lower() for word in role_words)), None)
+    if role_index is not None:
+        company = next((part for index, part in enumerate(parts) if index != role_index and part.lower() not in {"careers", "jobs"} and not _looks_like_location(part)), None)
+        return parts[role_index], company
     return None, None
 
 
+def _looks_like_location(value: str) -> bool:
+    normalized = value.lower()
+    return normalized in {"remote", "hybrid", "hyderabad", "bengaluru", "bangalore", "mumbai", "singapore", "dubai", "london", "new york"} or normalized.startswith(("remote ", "hybrid "))
+
+
 def _hostname_company(hostname: str) -> str | None:
+    if hostname.lower() in {"example.com", "example.org", "example.net"}:
+        return None
     labels = [item for item in hostname.lower().split(".") if item not in {"www", "careers", "career", "jobs", "job", "work", "apply"}]
     if len(labels) < 2 or _is_platform(hostname):
         return None
@@ -186,8 +256,8 @@ def _hostname_company(hostname: str) -> str | None:
 def _extract_html(soup: BeautifulSoup, result: ExtractionResult, hostname: str) -> None:
     title = _clean(soup.title.get_text(" ")) if soup.title is not None else None
     role, company = _title_parts(title or "")
-    result.role = result.role or _semantic_text(soup, ("job-title", "jobtitle", "job_title", "position-title", "posting-title", "role")) or role
-    result.company = result.company or _semantic_text(soup, ("company-name", "employer", "hiring-organization")) or company
+    result.role = result.role or _semantic_text(soup, ("job-title", "jobtitle", "job_title", "position-title", "posting-title", "posting-headline", "job-header", "job-heading", "role-title", "position", "job-name")) or role
+    result.company = result.company or _semantic_text(soup, ("company-name", "company", "employer", "hiring-organization")) or company
     result.location = result.location or _semantic_text(soup, ("job-location", "job_location", "location", "workplace"))
     if not result.role:
         heading = soup.find(["h1", "h2"])
@@ -242,7 +312,9 @@ def extract_metadata(url: str) -> ExtractionResult:
                     raise ValueError("The job page is too large.")
                 soup = BeautifulSoup(response.text[: get_settings().max_fetch_bytes], "html.parser")
                 json_ld_found = _extract_json_ld(soup, result)
+                _extract_microdata(soup, result)
                 _extract_meta(soup, result)
+                _extract_application_state(soup, result)
                 _extract_html(soup, result, urlparse(current).hostname or "")
                 _finalize(result, soup, urlparse(current).hostname or "")
                 if not json_ld_found and result.confidence == "LOW":

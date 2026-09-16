@@ -22,8 +22,9 @@ class FakeResponse:
 
 
 class FakeClient:
-    def __init__(self, response):
+    def __init__(self, response, **kwargs):
         self.response = response
+        self.options = kwargs
 
     def __enter__(self):
         return self
@@ -31,13 +32,13 @@ class FakeClient:
     def __exit__(self, *args):
         return None
 
-    def get(self, url):
+    def get(self, url, **kwargs):
         return self.response
 
 
 def result_for(monkeypatch, filename, url="https://example.com/jobs/1"):
     response = FakeResponse((FIXTURES / filename).read_text())
-    monkeypatch.setattr(httpx, "Client", lambda **kwargs: FakeClient(response))
+    monkeypatch.setattr(httpx, "Client", lambda *args, **kwargs: FakeClient(response, **kwargs))
     return extract_metadata(url)
 
 
@@ -47,6 +48,16 @@ def test_json_ld_graph_and_location(monkeypatch):
     assert result.company == "Acme"
     assert result.location == "Hyderabad, Telangana"
     assert result.confidence == "HIGH"
+
+
+def test_direct_json_ld_and_no_useful_metadata(monkeypatch):
+    direct = result_for(monkeypatch, "jobposting_direct.html")
+    assert direct.role == "Software Engineer"
+    assert direct.company == "Acme"
+    assert direct.location == "Remote"
+    empty = result_for(monkeypatch, "no_useful_metadata.html")
+    assert empty.confidence == "NONE"
+    assert any("no useful" in warning.lower() for warning in empty.warnings)
 
 
 def test_json_ld_array(monkeypatch):
@@ -77,6 +88,34 @@ def test_malformed_json_ld_does_not_crash(monkeypatch):
     result = result_for(monkeypatch, "malformed_jsonld.html")
     assert result.description == "Manual review needed."
     assert result.confidence in {"LOW", "NONE"}
+
+
+def test_microdata_and_application_state(monkeypatch):
+    microdata = result_for(monkeypatch, "microdata_job.html")
+    assert microdata.role == "Backend Engineer"
+    assert microdata.company == "Acme Labs"
+    assert microdata.location == "Bengaluru, India"
+    state = result_for(monkeypatch, "application_json_job.html")
+    assert state.role == "Founding Engineer"
+    assert state.company == "Orbit"
+    assert state.location == "Remote"
+    assert state.description == "Build the first platform."
+
+
+def test_remote_title_variant_and_yc_source(monkeypatch):
+    remote = result_for(monkeypatch, "remote_job.html")
+    assert remote.location == "Remote"
+    assert remote.confidence == "HIGH"
+    title = result_for(monkeypatch, "career_title_variants.html")
+    assert title.role == "Senior Backend Engineer"
+    assert title.company == "Acme"
+    title_location = result_for(monkeypatch, "career_title_variants.html")
+    assert title_location.role == "Senior Backend Engineer"
+    yc = result_for(monkeypatch, "yc_job.html", "https://www.ycombinator.com/jobs/1")
+    assert yc.source == "Y Combinator"
+    assert yc.company == "Lattice"
+    assert yc.role == "Founding Engineer"
+    assert yc.location == "Remote"
 
 
 def test_unsafe_url_rejected():
