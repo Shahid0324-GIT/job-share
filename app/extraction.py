@@ -1,7 +1,9 @@
 import ipaddress
+import json
+import re
 import socket
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -16,7 +18,7 @@ class ExtractionResult:
     location: str | None = None
     description: str | None = None
     source: str = "Company Careers"
-    confidence: str = "low"
+    confidence: str = "NONE"
     warnings: list[str] = field(default_factory=list)
 
 
@@ -25,7 +27,12 @@ def _safe_hostname(hostname: str) -> bool:
         return False
     try:
         addresses = {item[4][0] for item in socket.getaddrinfo(hostname, None)}
-        return bool(addresses) and all(not ipaddress.ip_address(address).is_private and not ipaddress.ip_address(address).is_loopback and not ipaddress.ip_address(address).is_link_local for address in addresses)
+        return bool(addresses) and all(
+            not (address := ipaddress.ip_address(item)).is_private
+            and not address.is_loopback
+            and not address.is_link_local
+            for item in addresses
+        )
     except (OSError, ValueError):
         return False
 
@@ -36,24 +43,182 @@ def validate_fetch_url(url: str) -> None:
         raise ValueError("Invalid or unsupported URL.")
 
 
-def _source(hostname: str) -> str:
+def _source(hostname: str, path: str = "") -> str:
     host = hostname.lower()
-    for domain, label in (("linkedin.com", "LinkedIn"), ("naukri.com", "Naukri"), ("indeed.com", "Indeed"), ("lever.co", "Lever"), ("greenhouse.io", "Greenhouse"), ("workday.com", "Workday")):
+    known = (
+        ("linkedin.com", "LinkedIn"),
+        ("naukri.com", "Naukri"),
+        ("indeed.com", "Indeed"),
+        ("lever.co", "Lever"),
+        ("greenhouse.io", "Greenhouse"),
+        ("workday.com", "Workday"),
+    )
+    for domain, label in known:
         if host == domain or host.endswith("." + domain):
             return label
+    if host == "ycombinator.com" or host.endswith(".ycombinator.com"):
+        return "Y Combinator"
     return "Company Careers"
 
 
 def _clean(value: object, limit: int = 255) -> str | None:
     if not isinstance(value, str):
         return None
+    if "<" in value and ">" in value:
+        value = BeautifulSoup(value, "html.parser").get_text(" ")
     value = " ".join(value.split())
     return value[:limit] or None
 
 
+def _add_warning(result: ExtractionResult, warning: str) -> None:
+    if warning not in result.warnings:
+        result.warnings.append(warning)
+
+
+def _is_platform(hostname: str) -> bool:
+    return any(hostname == domain or hostname.endswith("." + domain) for domain in ("linkedin.com", "indeed.com", "naukri.com"))
+
+
+def _find_job_postings(value: object) -> list[dict]:
+    found: list[dict] = []
+    if isinstance(value, list):
+        for item in value:
+            found.extend(_find_job_postings(item))
+    elif isinstance(value, dict):
+        types = value.get("@type", [])
+        types = types if isinstance(types, list) else [types]
+        if "JobPosting" in types:
+            found.append(value)
+        for child in value.values():
+            if isinstance(child, (dict, list)):
+                found.extend(_find_job_postings(child))
+    return found
+
+
+def _location_text(value: object) -> str | None:
+    if isinstance(value, list):
+        values = [_location_text(item) for item in value]
+        return ", ".join(item for item in values if item) or None
+    if not isinstance(value, dict):
+        return _clean(value)
+    address = value.get("address", value)
+    if isinstance(address, str):
+        return _clean(address)
+    if not isinstance(address, dict):
+        return None
+    parts = [address.get(key) for key in ("addressLocality", "addressRegion", "addressCountry")]
+    return ", ".join(item for item in (_clean(part) for part in parts) if item) or None
+
+
+def _extract_json_ld(soup: BeautifulSoup, result: ExtractionResult) -> bool:
+    found = False
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            payload = json.loads(script.string or script.get_text())
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        postings = _find_job_postings(payload)
+        if not postings:
+            continue
+        found = True
+        posting = postings[0]
+        result.role = result.role or _clean(posting.get("title"))
+        organization = posting.get("hiringOrganization")
+        if isinstance(organization, dict):
+            result.company = result.company or _clean(organization.get("name"))
+        result.location = result.location or _location_text(posting.get("jobLocation"))
+        result.description = result.description or _clean(posting.get("description"), 20_000)
+    return found
+
+
+def _meta_values(soup: BeautifulSoup) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for tag in soup.find_all("meta"):
+        key = tag.get("property") or tag.get("name")
+        content = tag.get("content")
+        if key and content:
+            values[key.lower()] = content
+    return values
+
+
+def _extract_meta(soup: BeautifulSoup, result: ExtractionResult) -> None:
+    values = _meta_values(soup)
+    meta_title = _clean(values.get("og:title") or values.get("twitter:title"))
+    title_role, title_company = _title_parts(meta_title or "")
+    result.role = result.role or title_role or meta_title
+    result.company = result.company or title_company
+    result.description = result.description or _clean(values.get("og:description") or values.get("twitter:description") or values.get("description"), 20_000)
+    result.company = result.company or _clean(values.get("og:site_name"))
+
+
+def _semantic_text(soup: BeautifulSoup, terms: tuple[str, ...]) -> str | None:
+    for element in soup.find_all(True):
+        marker = " ".join(str(element.get(attribute, "")) for attribute in ("id", "class", "itemprop", "data-testid")).lower()
+        if any(term in marker for term in terms):
+            value = _clean(element.get_text(" "))
+            if value and len(value) <= 255:
+                return value
+    return None
+
+
+def _title_parts(title: str) -> tuple[str | None, str | None]:
+    parts = [part.strip() for part in re.split(r"\s+[|\u2013\u2014-]\s+", title) if part.strip()]
+    if len(parts) != 2:
+        return None, None
+    generic = {"careers", "jobs", "job", "careers page", "opportunities"}
+    if parts[0].lower() in generic or parts[1].lower() in generic:
+        return None, None
+    role_words = ("engineer", "developer", "manager", "designer", "analyst", "scientist", "recruiter", "intern", "director", "specialist", "consultant", "lead")
+    if any(word in parts[0].lower() for word in role_words):
+        return parts[0], parts[1]
+    if any(word in parts[1].lower() for word in role_words):
+        return parts[1], parts[0]
+    return None, None
+
+
+def _hostname_company(hostname: str) -> str | None:
+    labels = [item for item in hostname.lower().split(".") if item not in {"www", "careers", "career", "jobs", "job", "work", "apply"}]
+    if len(labels) < 2 or _is_platform(hostname):
+        return None
+    return labels[-2].replace("-", " ").title()
+
+
+def _extract_html(soup: BeautifulSoup, result: ExtractionResult, hostname: str) -> None:
+    title = _clean(soup.title.get_text(" ")) if soup.title is not None else None
+    role, company = _title_parts(title or "")
+    result.role = result.role or _semantic_text(soup, ("job-title", "jobtitle", "job_title", "position-title", "posting-title", "role")) or role
+    result.company = result.company or _semantic_text(soup, ("company-name", "employer", "hiring-organization")) or company
+    result.location = result.location or _semantic_text(soup, ("job-location", "job_location", "location", "workplace"))
+    if not result.role:
+        heading = soup.find(["h1", "h2"])
+        if heading is not None:
+            candidate = _clean(heading.get_text(" "))
+            if candidate and any(word in candidate.lower() for word in ("engineer", "developer", "manager", "designer", "analyst", "intern", "specialist")):
+                result.role = candidate
+    result.company = result.company or _hostname_company(hostname)
+
+
+def _finalize(result: ExtractionResult, soup: BeautifulSoup, hostname: str) -> None:
+    text = soup.get_text(" ").lower()
+    if not result.role and any(marker in text for marker in ("enable javascript", "javascript is required", "loading...")):
+        _add_warning(result, "This page appears to require JavaScript to expose job details.")
+    if hostname.endswith("linkedin.com") and ("sign in" in text or "join linkedin" in text or not result.role):
+        _add_warning(result, "LinkedIn did not expose enough public job metadata.")
+    if not result.role and not result.company and not result.location:
+        _add_warning(result, "Automatic extraction found no useful job details. You can enter them manually.")
+    if result.role and result.company and result.location:
+        result.confidence = "HIGH"
+    elif result.role and result.company:
+        result.confidence = "MEDIUM"
+    elif result.role or result.company or result.location:
+        result.confidence = "LOW"
+    else:
+        result.confidence = "NONE"
+
+
 def extract_metadata(url: str) -> ExtractionResult:
     parsed = urlparse(url)
-    result = ExtractionResult(source=_source(parsed.hostname or ""))
+    result = ExtractionResult(source=_source(parsed.hostname or "", parsed.path))
     try:
         validate_fetch_url(url)
         timeout = httpx.Timeout(10.0, connect=5.0)
@@ -65,8 +230,7 @@ def extract_metadata(url: str) -> ExtractionResult:
                 if response.is_redirect:
                     location = response.headers.get("location")
                     if not location:
-                        break
-                    from urllib.parse import urljoin
+                        raise ValueError("The job page returned an invalid redirect.")
                     current = urljoin(current, location)
                     validate_fetch_url(current)
                     continue
@@ -77,51 +241,18 @@ def extract_metadata(url: str) -> ExtractionResult:
                 if len(response.content) > get_settings().max_fetch_bytes:
                     raise ValueError("The job page is too large.")
                 soup = BeautifulSoup(response.text[: get_settings().max_fetch_bytes], "html.parser")
-                _extract_json_ld(soup, result)
+                json_ld_found = _extract_json_ld(soup, result)
                 _extract_meta(soup, result)
-                if not result.role and soup.title:
-                    result.role = _clean(soup.title.get_text(" "))
-                heading = soup.find("h1")
-                if not result.role and heading is not None:
-                    result.role = _clean(heading.get_text(" "))
-                result.confidence = "high" if result.role and result.company else "medium" if result.role else "low"
+                _extract_html(soup, result, urlparse(current).hostname or "")
+                _finalize(result, soup, urlparse(current).hostname or "")
+                if not json_ld_found and result.confidence == "LOW":
+                    _add_warning(result, "Automatic extraction found only partial information.")
                 return result
             raise ValueError("Too many redirects.")
-    except (httpx.HTTPError, ValueError, OSError) as exc:
-        result.warnings.append("The job page could not be fetched. You can enter the job details manually.")
+    except (httpx.HTTPError, ValueError, OSError):
+        if result.source == "LinkedIn":
+            _add_warning(result, "LinkedIn did not expose enough public metadata for automatic extraction.")
+        else:
+            _add_warning(result, "The job page could not be fetched. You can enter the job details manually.")
+        result.confidence = "NONE"
         return result
-
-
-def _extract_json_ld(soup: BeautifulSoup, result: ExtractionResult) -> None:
-    import json
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            payload = json.loads(script.string or script.get_text())
-        except (TypeError, ValueError):
-            continue
-        entries = payload if isinstance(payload, list) else [payload]
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            if entry.get("@type") == "JobPosting" or "JobPosting" in entry.get("@type", []):
-                result.role = result.role or _clean(entry.get("title"))
-                organization = entry.get("hiringOrganization") or {}
-                result.company = result.company or _clean(organization.get("name") if isinstance(organization, dict) else None)
-                location = entry.get("jobLocation") or {}
-                if isinstance(location, list):
-                    location = location[0] if location else {}
-                address = location.get("address") if isinstance(location, dict) else {}
-                result.location = result.location or _clean(address.get("addressLocality") if isinstance(address, dict) else None)
-                result.description = result.description or _clean(entry.get("description"), 20_000)
-
-
-def _extract_meta(soup: BeautifulSoup, result: ExtractionResult) -> None:
-    values = {}
-    for tag in soup.find_all("meta"):
-        key = tag.get("property") or tag.get("name")
-        content = tag.get("content")
-        if key and content:
-            values[key.lower()] = content
-    result.role = result.role or _clean(values.get("og:title") or values.get("twitter:title"))
-    result.description = result.description or _clean(values.get("og:description") or values.get("description"), 20_000)
-    result.company = result.company or _clean(values.get("og:site_name"))

@@ -1,4 +1,5 @@
 import os
+import re
 
 os.environ["DATABASE_URL"] = "sqlite:///./test-api.db"
 os.environ["ADMIN_PASSWORD"] = "test-password"
@@ -9,8 +10,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, get_db
+from app.extraction import ExtractionResult
 from app.models import Batch, BatchJob, Friend, FriendJob, Job
 from app.main import app
+import app.main as main_module
 from app.security import hash_token, new_token
 
 engine = create_engine("sqlite:///./test-api.db")
@@ -28,6 +31,14 @@ def override_db():
 
 
 app.dependency_overrides[get_db] = override_db
+
+
+def admin_csrf(client: TestClient) -> str:
+    client.post("/admin/login", data={"password": "test-password"})
+    page = client.get("/admin")
+    csrf_match = re.search(r'window\.JOBSHARE=\{csrf:(.*?),baseUrl:', page.text)
+    assert csrf_match is not None
+    return csrf_match.group(1).strip('"')
 
 
 def test_admin_requires_login():
@@ -65,14 +76,7 @@ def test_batch_deletion_preserves_job():
     db.add(job); db.flush()
     batch = Batch(name="Today", jobs=[job]); db.add(batch); db.commit(); batch_id = batch.id; job_id = job.id; db.close()
     with TestClient(app) as client:
-        client.post("/admin/login", data={"password": "test-password"})
-        csrf = client.cookies.get("session")
-        # The admin session's CSRF value is rendered in the page, not stored in a public cookie.
-        page = client.get("/admin")
-        import re
-        csrf_match = re.search(r'window\.JOBSHARE=\{csrf:(.*?),baseUrl:', page.text)
-        assert csrf_match is not None
-        csrf = csrf_match.group(1).strip('"')
+        csrf = admin_csrf(client)
         response = client.delete(f"/api/admin/batches/{batch_id}", headers={"X-CSRF-Token": csrf})
         assert response.status_code == 200
     db = TestingSession()
@@ -87,12 +91,7 @@ def test_friend_can_be_renamed_and_deactivated():
     friend = Friend(name="Old name", token_hash=hash_token(token))
     db.add(friend); db.commit(); friend_id = friend.id; db.close()
     with TestClient(app) as client:
-        client.post("/admin/login", data={"password": "test-password"})
-        page = client.get("/admin")
-        import re
-        csrf_match = re.search(r'window\.JOBSHARE=\{csrf:(.*?),baseUrl:', page.text)
-        assert csrf_match is not None
-        csrf = csrf_match.group(1).strip('"')
+        csrf = admin_csrf(client)
         renamed = client.patch(f"/api/admin/friends/{friend_id}", json={"name": "New name"}, headers={"X-CSRF-Token": csrf})
         assert renamed.status_code == 200
         revoked = client.delete(f"/api/admin/friends/{friend_id}", headers={"X-CSRF-Token": csrf})
@@ -102,4 +101,49 @@ def test_friend_can_be_renamed_and_deactivated():
     assert stored is not None
     assert stored.name == "New name"
     assert stored.active is False
+    db.close()
+
+
+def test_preview_does_not_save_until_explicit_save(monkeypatch):
+    monkeypatch.setattr(main_module, "extract_metadata", lambda url: ExtractionResult(company="Acme", role="Engineer", location="Remote", source="Company Careers", confidence="HIGH"))
+    with TestClient(app) as client:
+        csrf = admin_csrf(client)
+        preview = client.post("/api/admin/jobs/preview", json={"url": "https://example.com/preview-job"}, headers={"X-CSRF-Token": csrf})
+        assert preview.status_code == 200
+        assert TestingSession().scalar(__import__("sqlalchemy").select(Job).where(Job.url == "https://example.com/preview-job")) is None
+        saved = client.post("/api/admin/jobs", json=preview.json(), headers={"X-CSRF-Token": csrf})
+        assert saved.status_code == 200
+
+
+def test_friend_copy_regenerate_and_deactivate_lifecycle():
+    with TestClient(app) as client:
+        csrf = admin_csrf(client)
+        created = client.post("/api/admin/friends", json={"name": "Lifecycle"}, headers={"X-CSRF-Token": csrf}).json()
+        token = created["token"]
+        copied = client.post(f"/api/admin/friends/{created['id']}/link", headers={"X-CSRF-Token": csrf})
+        assert copied.status_code == 200 and copied.json()["url"].endswith(token)
+        assert client.get(f"/u/{token}", follow_redirects=False).status_code == 303
+        regenerated = client.post(f"/api/admin/friends/{created['id']}/regenerate", headers={"X-CSRF-Token": csrf}).json()
+        assert regenerated["token"] != token
+        assert client.get(f"/u/{token}", follow_redirects=False).status_code == 404
+        assert client.get(f"/u/{regenerated['token']}", follow_redirects=False).status_code == 303
+        assert client.delete(f"/api/admin/friends/{created['id']}", headers={"X-CSRF-Token": csrf}).status_code == 200
+        assert client.get(f"/u/{regenerated['token']}", follow_redirects=False).status_code == 404
+
+
+def test_archived_job_is_retained_but_cannot_be_batched():
+    db = TestingSession()
+    job = Job(url="https://example.com/archive-job", source="Company Careers", role="Engineer")
+    friend = Friend(name="History", token_hash=hash_token(new_token()))
+    db.add_all([job, friend]); db.flush()
+    db.add(FriendJob(friend_id=friend.id, job_id=job.id, status="APPLIED")); db.commit(); job_id = job.id; friend_id = friend.id; db.close()
+    with TestClient(app) as client:
+        csrf = admin_csrf(client)
+        assert client.delete(f"/api/admin/jobs/{job_id}", headers={"X-CSRF-Token": csrf}).status_code == 200
+        assert client.post("/api/admin/batches", json={"name": "Archived", "job_ids": [job_id]}, headers={"X-CSRF-Token": csrf}).status_code == 400
+    db = TestingSession()
+    archived = db.get(Job, job_id)
+    assert archived is not None and archived.archived_at is not None
+    history = db.get(FriendJob, {"friend_id": friend_id, "job_id": job_id})
+    assert history is not None and history.status == "APPLIED"
     db.close()

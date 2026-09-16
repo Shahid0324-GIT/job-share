@@ -15,6 +15,14 @@ class JobInput(BaseModel):
         return value.strip() or None if value is not None else None
 
 
+class JobPreviewInput(JobInput):
+    pass
+
+
+class JobSaveInput(JobInput):
+    source: str = Field(default="Company Careers", max_length=100)
+
+
 class FriendInput(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 

@@ -50,6 +50,32 @@
           </button>
           <p id="job-message" class="message"></p>
         </form>
+        <form id="job-preview" class="preview-form" hidden>
+          <div class="preview-heading">
+            <p class="eyebrow">EXTRACTION PREVIEW</p>
+            <strong id="preview-confidence"></strong>
+          </div>
+          <label
+            >Company<input id="preview-company" type="text" maxlength="255"
+          /></label>
+          <label
+            >Role<input id="preview-role" type="text" maxlength="255"
+          /></label>
+          <label
+            >Location<input id="preview-location" type="text" maxlength="255"
+          /></label>
+          <label
+            >Source<input id="preview-source" type="text" maxlength="100"
+          /></label>
+          <label
+            >Description<textarea
+              id="preview-description"
+              maxlength="20000"
+            ></textarea>
+          </label>
+          <p id="preview-warnings" class="message"></p>
+          <button type="submit">Save job</button>
+        </form>
       </section>
       <section class="tab-panel active" data-panel="jobs">
         <div class="section-head">
@@ -87,7 +113,7 @@
                 data-id="{{ job.id }}"
                 type="button"
               >
-                Delete
+                Archive
               </button>
             </div>
           </article>
@@ -111,7 +137,7 @@
             ><span>{{ 'Active' if friend.active else 'Revoked' }}</span>
             <div>
               <button class="copy-link" data-id="{{ friend.id }}" type="button">
-                Copy new link</button
+                Copy Link</button
               ><button
                 class="edit-friend quiet"
                 data-id="{{ friend.id }}"

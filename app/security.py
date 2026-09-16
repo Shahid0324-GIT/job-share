@@ -2,7 +2,10 @@ import hashlib
 import hmac
 import secrets
 import time
+import base64
 from urllib.parse import urlparse
+
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.config import get_settings
 
@@ -17,6 +20,22 @@ def new_token() -> str:
 
 def token_matches(token: str, stored_hash: str) -> bool:
     return hmac.compare_digest(hash_token(token), stored_hash)
+
+
+def _token_cipher() -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(get_settings().secret_key.encode()).digest())
+    return Fernet(key)
+
+
+def encrypt_token(token: str) -> str:
+    return _token_cipher().encrypt(token.encode()).decode()
+
+
+def decrypt_token(value: str) -> str | None:
+    try:
+        return _token_cipher().decrypt(value.encode()).decode()
+    except (InvalidToken, ValueError, UnicodeDecodeError):
+        return None
 
 
 def make_session(value: str, ttl: int = 86400) -> str:

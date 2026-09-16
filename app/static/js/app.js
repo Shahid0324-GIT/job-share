@@ -26,21 +26,55 @@ async function api(url, options = {}) {
   return body;
 }
 const jobForm = document.querySelector("#job-form");
+const jobPreview = document.querySelector("#job-preview");
+let previewUrl = "";
 if (jobForm)
   jobForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const message = document.querySelector("#job-message");
     try {
-      await api("/api/admin/jobs", {
+      const result = await api("/api/admin/jobs/preview", {
         method: "POST",
         body: JSON.stringify({ url: document.querySelector("#job-url").value }),
       });
+      previewUrl = result.url;
+      document.querySelector("#preview-company").value = result.company || "";
+      document.querySelector("#preview-role").value = result.role || "";
+      document.querySelector("#preview-location").value = result.location || "";
+      document.querySelector("#preview-source").value =
+        result.source || "Company Careers";
+      document.querySelector("#preview-description").value =
+        result.description || "";
+      document.querySelector("#preview-confidence").textContent =
+        `Confidence: ${result.confidence}`;
+      document.querySelector("#preview-warnings").textContent =
+        result.warnings?.join(" ") || "Review the fields before saving.";
+      jobPreview.hidden = false;
       message.textContent =
-        "Job added. Review the details in the database before sharing.";
-      window.location.reload();
+        "Details fetched. Review and save the job when ready.";
     } catch (error) {
       message.textContent = error.message;
       message.className = "message error";
+    }
+  });
+if (jobPreview)
+  jobPreview.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api("/api/admin/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          url: previewUrl,
+          company: document.querySelector("#preview-company").value,
+          role: document.querySelector("#preview-role").value,
+          location: document.querySelector("#preview-location").value,
+          source: document.querySelector("#preview-source").value,
+          description: document.querySelector("#preview-description").value,
+        }),
+      });
+      window.location.reload();
+    } catch (error) {
+      document.querySelector("#preview-warnings").textContent = error.message;
     }
   });
 document.querySelectorAll(".delete-job").forEach((button) =>
@@ -106,6 +140,12 @@ if (friendButton)
   });
 document.querySelectorAll(".regenerate").forEach((button) =>
   button.addEventListener("click", async () => {
+    if (
+      !confirm(
+        "Regenerate this friend's private link? The old link will stop working.",
+      )
+    )
+      return;
     const result = await api(
       `/api/admin/friends/${button.dataset.id}/regenerate`,
       { method: "POST" },
@@ -118,14 +158,11 @@ document.querySelectorAll(".regenerate").forEach((button) =>
 );
 document.querySelectorAll(".copy-link").forEach((button) =>
   button.addEventListener("click", async () => {
-    const result = await api(
-      `/api/admin/friends/${button.dataset.id}/regenerate`,
-      { method: "POST" },
-    );
-    await navigator.clipboard.writeText(
-      `${window.JOBSHARE.baseUrl}/u/${result.token}`,
-    );
-    alert("New private link copied.");
+    const result = await api(`/api/admin/friends/${button.dataset.id}/link`, {
+      method: "POST",
+    });
+    await navigator.clipboard.writeText(result.url);
+    alert("Private link copied. The existing link is unchanged.");
   }),
 );
 document.querySelectorAll(".edit-friend").forEach((button) =>

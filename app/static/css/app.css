@@ -197,6 +197,27 @@ h3 {
 .panel form label {
   grid-column: 1 / -1;
 }
+.preview-form {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+.preview-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 0.8rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
 .job-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));

@@ -6,7 +6,7 @@ JobShare is a small private utility for collecting manually found job URLs, grou
 
 Browser -> FastAPI routes -> SQLAlchemy -> PostgreSQL/Neon.
 
-Submitted URLs pass through URL normalization, SSRF checks, bounded HTML fetching, and best-effort metadata extraction. Extraction never writes directly to the database; the admin remains responsible for confirming the stored details.
+Submitted URLs pass through URL normalization, SSRF checks, bounded HTML fetching, and best-effort metadata extraction. Fetching creates a preview only. The admin reviews and edits the preview, then explicitly saves the job.
 
 ## Local setup
 
@@ -25,7 +25,7 @@ Set `DATABASE_URL`, `ADMIN_PASSWORD`, and a long random `SECRET_KEY` in `.env`. 
 alembic upgrade head
 ```
 
-The initial migration creates `jobs`, `friends`, `batches`, `batch_jobs`, and `friend_jobs`. Production should use migrations rather than `Base.metadata.create_all()`.
+The migrations create `jobs`, `friends`, `batches`, `batch_jobs`, and `friend_jobs`. The second migration adds `jobs.archived_at` and encrypted recoverable friend tokens. Production should use migrations rather than `Base.metadata.create_all()`.
 
 ## Run locally
 
@@ -41,7 +41,24 @@ Open `http://127.0.0.1:8000/admin/login` and sign in with `ADMIN_PASSWORD`.
 pytest
 ```
 
-Tests use SQLite and do not contact Neon or external job pages.
+Tests use SQLite and mocked local HTML fixtures; they do not contact Neon or external job pages.
+
+## Job workflow
+
+1. Paste a manually found URL and choose **Fetch details**.
+2. Review the extraction preview, confidence, and warnings.
+3. Correct company, role, location, source, or description as needed.
+4. Choose **Save job**.
+
+Extraction is deterministic and best-effort. It checks JobPosting JSON-LD (including arrays and `@graph`), OpenGraph/Twitter metadata, semantic HTML fields, and conservative title heuristics. Y Combinator is recognized as a source. LinkedIn login/block pages and JavaScript-only shells produce warnings and remain manually editable. JobShare never executes JavaScript, bypasses protections, or crawls sites.
+
+Jobs are archived rather than physically deleted. Archived jobs leave active lists and cannot be added to new batches, while historical friend application statuses remain intact.
+
+## Friend links and batches
+
+New friend tokens are generated with `secrets`, looked up using a hash, and stored encrypted at rest so **Copy Link** can return the existing URL without changing it. **Regenerate** explicitly invalidates the old link and creates a new one. Friends receive an HTTP-only cookie after opening `/u/<token>` and subsequent reloads load their own statuses from PostgreSQL.
+
+All active friends see active jobs included in at least one batch. Deleting a batch removes only its job associations; it does not delete jobs or friend application history.
 
 ## Render deployment
 
@@ -50,11 +67,12 @@ Push the repository to GitHub and create a Render Web Service from it. `render.y
 ## Security notes
 
 - Admin access uses `ADMIN_PASSWORD` and an HTTP-only signed cookie.
-- Friend URLs are bearer credentials; only token hashes are stored.
+- Friend URLs are bearer credentials; token hashes are used for lookup and recoverable tokens are encrypted.
+- Recoverable raw tokens are encrypted at rest with a key derived from `SECRET_KEY`; legacy tokens continue to authenticate but must be regenerated before they can be copied from the admin UI.
 - State-changing admin APIs require the session CSRF token.
 - Fetching rejects non-HTTP(S), localhost, private, loopback, and link-local destinations, validates redirects, limits response size, and processes HTML only.
 - Original URLs are preserved after conservative tracking-parameter normalization.
 
 ## Known limitations
 
-Extraction is generic and best-effort. Pages requiring login, JavaScript rendering, CAPTCHAs, bot protection, or other restricted access must be completed manually by the admin. There is no automatic job discovery, crawling, notification service, or account system.
+Extraction is generic and best-effort. Pages requiring login, JavaScript rendering, CAPTCHAs, bot protection, or other restricted access must be completed manually by the admin. DNS rebinding remains a known limitation of the lightweight SSRF guard. There is no automatic job discovery, crawling, notification service, or account system.
