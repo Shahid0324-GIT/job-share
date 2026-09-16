@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>JobShare</title>
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <main class="shell public">
+      <header class="topbar public-header">
+        <div>
+          <p class="eyebrow">JOBSHARE / PRIVATE FEED</p>
+          <h1>Good luck, {{ friend.name }}<span class="accent-dot">.</span></h1>
+          <p class="lede">
+            Open the original listing, then mark it here when you have applied.
+          </p>
+        </div>
+      </header>
+      <section>
+        <div class="feed-label">
+          <span class="step">TODAY</span
+          ><span>{{ jobs|length }} opportunities</span>
+        </div>
+        <div class="job-grid">
+          {% for job in jobs %}
+          <article class="job-card">
+            <h2>{{ job.role or 'Untitled role' }}</h2>
+            <p>
+              {{ job.company or 'Company not set' }} · {{ job.location or
+              'Location not set' }}
+            </p>
+            <small>{{ job.source }}</small>
+            <div class="actions">
+              <a
+                class="button"
+                href="{{ job.url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Apply</a
+              ><button
+                class="status-button {{ 'applied' if statuses.get(job.id) == 'APPLIED' else '' }}"
+                data-job-id="{{ job.id }}"
+              >
+                {{ '✓ Applied' if statuses.get(job.id) == 'APPLIED' else '○ Not
+                applied' }}
+              </button>
+            </div>
+          </article>
+          {% else %}
+          <p class="muted">No jobs have been shared yet.</p>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>JobShare Admin</title>
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <main class="auth">
+      <section class="auth-card">
+        <div class="brand-mark">JS</div>
+        <p class="eyebrow">PRIVATE JOB DESK</p>
+        <h1>Welcome back.</h1>
+        <p class="auth-copy">
+          Your quiet corner for collecting the links worth sharing.
+        </p>
+        {% if error %}
+        <p class="error">{{ error }}</p>
+        {% endif %}
+        <form method="post">
+          <label
+            >Password<input
+              type="password"
+              name="password"
+              required
+              autofocus /></label
+          ><button type="submit">Open the desk</button>
+        </form>
+        <p class="fine-print">Admin access only</p>
+      </section>
+    </main>
+  </body>
+</html>

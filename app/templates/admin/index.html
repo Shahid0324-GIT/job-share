@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>JobShare Admin</title>
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar admin-header">
+        <div>
+          <p class="eyebrow">JOBSHARE / PRIVATE JOB DESK</p>
+          <h1>Keep the good links moving<span class="accent-dot">.</span></h1>
+          <p class="lede">
+            Collect first. Curate quickly. Share only what matters.
+          </p>
+        </div>
+        <form method="post" action="/admin/logout">
+          <input type="hidden" name="csrf" value="{{ csrf }}" /><button
+            class="quiet"
+            type="submit"
+          >
+            Sign out
+          </button>
+        </form>
+      </header>
+      <nav class="tabs" aria-label="Admin sections">
+        <button class="tab active" data-tab="jobs" type="button">Jobs</button>
+        <button class="tab" data-tab="friends" type="button">Friends</button>
+        <button class="tab" data-tab="batches" type="button">Batches</button>
+      </nav>
+      <section class="panel add-panel">
+        <div class="panel-heading">
+          <span class="step">01</span>
+          <div>
+            <p class="eyebrow">INBOX</p>
+            <h2>Add a job</h2>
+          </div>
+        </div>
+        <form id="job-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}" /><label
+            >Paste job URL<input
+              id="job-url"
+              type="url"
+              placeholder="https://..."
+              required /></label
+          ><button type="submit">
+            Fetch details <span aria-hidden="true">↗</span>
+          </button>
+          <p id="job-message" class="message"></p>
+        </form>
+      </section>
+      <section class="tab-panel active" data-panel="jobs">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">COLLECTION</p>
+            <h2>Jobs</h2>
+          </div>
+          <button id="batch-button" type="button">Create batch</button>
+        </div>
+        <div class="job-grid">
+          {% for job in jobs %}
+          <article class="job-card">
+            <input class="job-select" type="checkbox" value="{{ job.id }}" />
+            <h3>{{ job.role or 'Untitled role' }}</h3>
+            <p>
+              {{ job.company or 'Company not set' }} · {{ job.location or
+              'Location not set' }}
+            </p>
+            <small>{{ job.source }} · {{ job.url }}</small>
+            <div class="actions">
+              <button
+                class="edit-job quiet"
+                data-id="{{ job.id }}"
+                data-url="{{ job.url }}"
+                data-company="{{ job.company or '' }}"
+                data-role="{{ job.role or '' }}"
+                data-location="{{ job.location or '' }}"
+                data-source="{{ job.source }}"
+                type="button"
+              >
+                Edit details
+              </button>
+              <button
+                class="delete-job quiet"
+                data-id="{{ job.id }}"
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+          </article>
+          {% else %}
+          <p class="muted">No jobs yet.</p>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="tab-panel" data-panel="friends">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">PRIVATE LINKS</p>
+            <h2>Friends</h2>
+          </div>
+          <button id="friend-button" type="button">Add friend</button>
+        </div>
+        <div id="friend-list" class="friend-list">
+          {% for friend in friends %}
+          <article class="friend-row">
+            <strong>{{ friend.name }}</strong
+            ><span>{{ 'Active' if friend.active else 'Revoked' }}</span>
+            <div>
+              <button class="copy-link" data-id="{{ friend.id }}" type="button">
+                Copy new link</button
+              ><button
+                class="edit-friend quiet"
+                data-id="{{ friend.id }}"
+                data-name="{{ friend.name }}"
+                type="button"
+              >
+                Edit</button
+              ><button
+                class="delete-friend quiet"
+                data-id="{{ friend.id }}"
+                type="button"
+              >
+                {{ 'Deactivate' if friend.active else 'Revoked' }}</button
+              ><button
+                class="regenerate quiet"
+                data-id="{{ friend.id }}"
+                type="button"
+              >
+                Regenerate
+              </button>
+            </div>
+          </article>
+          {% else %}
+          <p class="muted">No friends yet.</p>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="tab-panel" data-panel="batches">
+        <p class="eyebrow">BATCHES</p>
+        <h2>Shared batches</h2>
+        {% for batch in batches %}
+        <p class="batch-line">
+          <strong>{{ batch.name }}</strong
+          ><span>{{ batch.jobs|length }} jobs</span
+          ><button
+            class="delete-batch quiet"
+            data-id="{{ batch.id }}"
+            type="button"
+          >
+            Delete
+          </button>
+        </p>
+        {% else %}
+        <p class="muted">Create a batch from selected jobs.</p>
+        {% endfor %}
+      </section>
+    </main>
+    <script>
+      window.JOBSHARE={csrf:{{ csrf|tojson }},baseUrl:{{ base_url|tojson }}};
+    </script>
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>
