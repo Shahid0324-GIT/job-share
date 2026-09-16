@@ -19,38 +19,66 @@
       </header>
       <section>
         <div class="feed-label">
-          <span class="step">SHARED JOBS</span
-          ><span>{{ jobs|length }} opportunities</span>
+          <span class="step">SHARED JOBS</span>
+          <span id="opportunities-count">{{ jobs|length }} opportunities</span>
         </div>
-        <div class="job-grid">
-          {% for job in jobs %}
-          <article class="job-card">
-            <h2>{{ job.role or 'Untitled role' }}</h2>
-            <p>
-              {{ job.company or 'Company not set' }} · {{ job.location or
-              'Location not set' }}
-            </p>
-            <small>{{ job.source }}</small>
-            <div class="actions">
-              <a
-                class="button"
-                href="{{ job.url }}"
-                target="_blank"
-                rel="noopener noreferrer"
-                >Apply</a
-              ><button
-                class="status-button {{ 'applied' if statuses.get(job.id) == 'APPLIED' else '' }}"
-                data-job-id="{{ job.id }}"
-              >
-                {{ '✓ Applied' if statuses.get(job.id) == 'APPLIED' else '○ Not
-                applied' }}
-              </button>
+
+        {% if batch_groups %}
+        <nav class="filter-bar" aria-label="Job filters">
+          <button class="filter-pill active" data-filter="all" type="button">
+            All ({{ jobs|length }})
+          </button>
+          {% if batch_groups|length > 1 %}
+          <button class="filter-pill" data-filter="latest" type="button">
+            Latest Batch
+          </button>
+          {% endif %}
+          <button class="filter-pill" data-filter="unapplied" type="button">
+            Not applied
+          </button>
+        </nav>
+
+        <div id="feed-container">
+          {% for group in batch_groups %}
+          <div class="batch-group" data-batch-id="{{ group.id }}">
+            <div class="date-separator">
+              <div class="date-separator-info">
+                <span class="date-tag">{{ group.name }}</span>
+                <span class="date-count">{{ group.jobs|length }} {{ 'opportunity' if group.jobs|length == 1 else 'opportunities' }}</span>
+              </div>
             </div>
-          </article>
-          {% else %}
-          <p class="muted">No jobs have been shared yet.</p>
+            <div class="job-grid">
+              {% for job in group.jobs %}
+              <article class="job-card" data-job-id="{{ job.id }}" data-applied="{{ 'true' if statuses.get(job.id) == 'APPLIED' else 'false' }}">
+                <h2>{{ job.role or 'Untitled role' }}</h2>
+                <p>
+                  {{ job.company or 'Company not set' }} · {{ job.location or
+                  'Location not set' }}
+                </p>
+                <small>{{ job.source }}</small>
+                <div class="actions">
+                  <a
+                    class="button"
+                    href="{{ job.url }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >Apply</a
+                  ><button
+                    class="status-button {{ 'applied' if statuses.get(job.id) == 'APPLIED' else '' }}"
+                    data-job-id="{{ job.id }}"
+                  >
+                    {{ '✓ Applied' if statuses.get(job.id) == 'APPLIED' else '○ Not applied' }}
+                  </button>
+                </div>
+              </article>
+              {% endfor %}
+            </div>
+          </div>
           {% endfor %}
         </div>
+        {% else %}
+        <p class="muted">No jobs have been shared yet.</p>
+        {% endif %}
       </section>
     </main>
     <script src="/static/js/app.js"></script>

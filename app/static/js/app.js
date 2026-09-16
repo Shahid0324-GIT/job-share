@@ -236,6 +236,35 @@ document.querySelectorAll(".delete-friend").forEach((button) =>
     window.location.reload();
   }),
 );
+let currentFilter = "all";
+function applyCurrentFilter() {
+  const batchGroups = document.querySelectorAll(".batch-group");
+  if (!batchGroups.length) return;
+  batchGroups.forEach((group, index) => {
+    const cards = group.querySelectorAll(".job-card");
+    let visibleCount = 0;
+    cards.forEach((card) => {
+      let show = true;
+      if (currentFilter === "latest") {
+        show = index === 0;
+      } else if (currentFilter === "unapplied") {
+        show = card.dataset.applied !== "true";
+      }
+      card.style.display = show ? "" : "none";
+      if (show) visibleCount++;
+    });
+    group.style.display = visibleCount > 0 ? "" : "none";
+  });
+}
+document.querySelectorAll(".filter-pill").forEach((pill) =>
+  pill.addEventListener("click", () => {
+    document
+      .querySelectorAll(".filter-pill")
+      .forEach((item) => item.classList.toggle("active", item === pill));
+    currentFilter = pill.dataset.filter || "all";
+    applyCurrentFilter();
+  }),
+);
 document.querySelectorAll(".status-button").forEach((button) =>
   button.addEventListener("click", async () => {
     const next = button.classList.contains("applied")
@@ -248,5 +277,9 @@ document.querySelectorAll(".status-button").forEach((button) =>
     button.classList.toggle("applied", result.status === "APPLIED");
     button.textContent =
       result.status === "APPLIED" ? "✓ Applied" : "○ Not applied";
+    const card = button.closest(".job-card");
+    if (card)
+      card.dataset.applied = result.status === "APPLIED" ? "true" : "false";
+    applyCurrentFilter();
   }),
 );

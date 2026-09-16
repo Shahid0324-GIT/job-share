@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
@@ -121,7 +121,13 @@ def group_jobs_by_date(jobs: list[Job]) -> list[dict]:
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, db: Session = Depends(get_db)):
     admin_required(request)
-    jobs = db.scalars(select(Job).where(Job.archived_at.is_(None)).order_by(Job.created_at.desc()).limit(100)).all()
+    jobs = db.scalars(
+        select(Job)
+        .options(selectinload(Job.batches))
+        .where(Job.archived_at.is_(None))
+        .order_by(Job.created_at.desc())
+        .limit(100)
+    ).all()
     job_groups = group_jobs_by_date(jobs)
     friends = db.scalars(select(Friend).order_by(Friend.name)).all()
     batches = db.scalars(select(Batch).options(joinedload(Batch.jobs)).order_by(Batch.created_at.desc())).unique().all()
@@ -308,9 +314,40 @@ def friend_link(token: str, request: Request, db: Session = Depends(get_db)):
 @app.get("/u", response_class=HTMLResponse)
 def friend_page(request: Request, db: Session = Depends(get_db)):
     friend = public_friend(request, db)
-    jobs = db.scalars(select(Job).join(BatchJob).join(Batch).where(BatchJob.job_id == Job.id, Job.archived_at.is_(None)).order_by(BatchJob.added_at.desc())).unique().all()
+    batches = db.scalars(
+        select(Batch)
+        .options(joinedload(Batch.jobs))
+        .order_by(Batch.created_at.desc())
+    ).unique().all()
+
+    batch_groups = []
+    all_jobs = []
+    seen_job_ids = set()
+    for batch in batches:
+        active_jobs = [j for j in batch.jobs if j.archived_at is None]
+        if active_jobs:
+            batch_groups.append({
+                "id": batch.id,
+                "name": batch.name or f"Batch · {batch.created_at.strftime('%B %d, %Y')}",
+                "created_at": batch.created_at,
+                "jobs": active_jobs,
+            })
+            for j in active_jobs:
+                if j.id not in seen_job_ids:
+                    seen_job_ids.add(j.id)
+                    all_jobs.append(j)
+
     statuses = {item.job_id: item.status for item in db.scalars(select(FriendJob).where(FriendJob.friend_id == friend.id)).all()}
-    return templates.TemplateResponse(request=request, name="public/jobs.html", context={"friend": friend, "jobs": jobs, "statuses": statuses})
+    return templates.TemplateResponse(
+        request=request,
+        name="public/jobs.html",
+        context={
+            "friend": friend,
+            "jobs": all_jobs,
+            "batch_groups": batch_groups,
+            "statuses": statuses,
+        },
+    )
 
 
 @app.patch("/api/public/jobs/{job_id}/status")

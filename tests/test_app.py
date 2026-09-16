@@ -189,3 +189,51 @@ def test_admin_page_renders_date_groups_and_select_all():
         add_panel_start = response.text.find('class="panel add-panel"')
         friends_panel_start = response.text.find('data-panel="friends"')
         assert jobs_panel_start < add_panel_start < friends_panel_start
+
+
+def test_admin_job_card_shows_in_batch_badge():
+    db = TestingSession()
+    job = Job(url="https://example.com/batched-job-test", source="Company Careers", role="Staff Architect")
+    db.add(job)
+    db.flush()
+    batch = Batch(name="Evening Batch Alpha", jobs=[job])
+    db.add(batch)
+    db.commit()
+    db.close()
+
+    with TestClient(app) as client:
+        client.post("/admin/login", data={"password": "test-password"})
+        response = client.get("/admin")
+        assert response.status_code == 200
+        assert "batch-badge" in response.text
+        assert "In batch" in response.text
+        assert "Evening Batch Alpha" in response.text
+
+
+def test_friend_feed_batch_groups_and_filter_pills():
+    token = new_token()
+    db = TestingSession()
+    friend = Friend(name="FeedTester", token_hash=hash_token(token))
+    job1 = Job(url="https://example.com/feed-job-1", source="Company Careers", role="Senior Dev")
+    job2 = Job(url="https://example.com/feed-job-2", source="Company Careers", role="Junior Dev")
+    db.add_all([friend, job1, job2])
+    db.flush()
+    batch1 = Batch(name="Batch 1", jobs=[job1])
+    batch2 = Batch(name="Batch 2", jobs=[job2])
+    db.add_all([batch1, batch2])
+    db.commit()
+    db.close()
+
+    with TestClient(app) as client:
+        client.get(f"/u/{token}", follow_redirects=False)
+        response = client.get("/u")
+        assert response.status_code == 200
+        assert "filter-bar" in response.text
+        assert "filter-pill" in response.text
+        assert "Latest Batch" in response.text
+        assert "Not applied" in response.text
+        assert "batch-group" in response.text
+        assert "Batch 1" in response.text
+        assert "Batch 2" in response.text
+        assert "Senior Dev" in response.text
+        assert "Junior Dev" in response.text

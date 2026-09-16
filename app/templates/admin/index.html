@@ -101,6 +101,11 @@
             {% for job in group.jobs %}
             <article class="job-card" data-job-id="{{ job.id }}">
               <input class="job-select" type="checkbox" value="{{ job.id }}" />
+              {% if job.batches %}
+              <div class="card-badge-row">
+                <span class="batch-badge" title="In batch: {% for b in job.batches %}{{ b.name or 'Batch' }}{% if not loop.last %}, {% endif %}{% endfor %}">In batch</span>
+              </div>
+              {% endif %}
               <h3>{{ job.role or 'Untitled role' }}</h3>
               <p>
                 {{ job.company or 'Company not set' }} · {{ job.location or

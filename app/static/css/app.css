@@ -281,9 +281,60 @@ textarea {
   accent-color: var(--coral);
   cursor: pointer;
 }
-.date-group .job-grid {
+.date-group,
+.batch-group {
+  margin-bottom: 2.8rem;
+}
+.date-group .job-grid,
+.batch-group .job-grid {
   margin-top: 0;
   margin-bottom: 0;
+}
+.card-badge-row {
+  margin-bottom: 0.5rem;
+}
+.batch-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--mint);
+  color: #244b1b;
+  padding: 0.15rem 0.5rem;
+  border-radius: 2px;
+}
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.2rem 0 1.8rem;
+}
+.filter-pill {
+  padding: 0.4rem 0.85rem;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background-color 0.15s;
+}
+.filter-pill:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  transform: none;
+}
+.filter-pill.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
 }
 .job-grid {
   display: grid;
