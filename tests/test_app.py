@@ -189,6 +189,9 @@ def test_admin_page_renders_date_groups_and_select_all():
         add_panel_start = response.text.find('class="panel add-panel"')
         friends_panel_start = response.text.find('data-panel="friends"')
         assert jobs_panel_start < add_panel_start < friends_panel_start
+        assert "admin-filter-bar" in response.text
+        assert 'data-admin-filter="today"' in response.text
+        assert 'data-admin-filter="unbatched"' in response.text
 
 
 def test_admin_job_card_shows_in_batch_badge():

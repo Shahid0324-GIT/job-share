@@ -249,6 +249,8 @@ function applyCurrentFilter() {
         show = index === 0;
       } else if (currentFilter === "unapplied") {
         show = card.dataset.applied !== "true";
+      } else if (currentFilter !== "all") {
+        show = group.dataset.batchId === currentFilter;
       }
       card.style.display = show ? "" : "none";
       if (show) visibleCount++;
@@ -256,13 +258,61 @@ function applyCurrentFilter() {
     group.style.display = visibleCount > 0 ? "" : "none";
   });
 }
-document.querySelectorAll(".filter-pill").forEach((pill) =>
+document
+  .querySelectorAll(".filter-bar:not(.admin-filter-bar) .filter-pill")
+  .forEach((pill) =>
+    pill.addEventListener("click", () => {
+      document
+        .querySelectorAll(".filter-bar:not(.admin-filter-bar) .filter-pill")
+        .forEach((item) => item.classList.toggle("active", item === pill));
+      currentFilter = pill.dataset.filter || "all";
+      applyCurrentFilter();
+    }),
+  );
+
+let currentAdminFilter = "all";
+function applyAdminFilter() {
+  const dateGroups = document.querySelectorAll(
+    ".tab-panel[data-panel='jobs'] .date-group",
+  );
+  if (!dateGroups.length) return;
+  dateGroups.forEach((group, index) => {
+    const isToday =
+      index === 0 &&
+      Boolean(
+        group.querySelector(".date-tag")?.textContent.startsWith("Today"),
+      );
+    const cards = group.querySelectorAll(".job-card");
+    let visibleCount = 0;
+    cards.forEach((card) => {
+      let show = true;
+      if (currentAdminFilter === "today") {
+        show = isToday;
+      } else if (currentAdminFilter === "unbatched") {
+        show = card.dataset.batched !== "true";
+      } else if (currentAdminFilter !== "all") {
+        show = group.dataset.date === currentAdminFilter;
+      }
+      card.style.display = show ? "" : "none";
+      if (show) visibleCount++;
+    });
+    group.style.display = visibleCount > 0 ? "" : "none";
+  });
+}
+const initialAdminPill = document.querySelector(
+  ".admin-filter-bar .filter-pill.active",
+);
+if (initialAdminPill) {
+  currentAdminFilter = initialAdminPill.dataset.adminFilter || "all";
+  applyAdminFilter();
+}
+document.querySelectorAll(".admin-filter-bar .filter-pill").forEach((pill) =>
   pill.addEventListener("click", () => {
     document
-      .querySelectorAll(".filter-pill")
+      .querySelectorAll(".admin-filter-bar .filter-pill")
       .forEach((item) => item.classList.toggle("active", item === pill));
-    currentFilter = pill.dataset.filter || "all";
-    applyCurrentFilter();
+    currentAdminFilter = pill.dataset.adminFilter || "all";
+    applyAdminFilter();
   }),
 );
 document.querySelectorAll(".status-button").forEach((button) =>

@@ -36,6 +36,15 @@
           <button class="filter-pill" data-filter="unapplied" type="button">
             Not applied
           </button>
+          {% if batch_groups|length > 1 %}
+          {% for group in batch_groups %}
+          {% if not loop.first %}
+          <button class="filter-pill" data-filter="{{ group.id }}" type="button">
+            {{ group.name }} ({{ group.jobs|length }})
+          </button>
+          {% endif %}
+          {% endfor %}
+          {% endif %}
         </nav>
 
         <div id="feed-container">

@@ -85,6 +85,33 @@
           </div>
           <button id="batch-button" type="button">Create batch</button>
         </div>
+        {% if job_groups %}
+        <nav class="filter-bar admin-filter-bar" aria-label="Job date filters">
+          {% set has_today = job_groups[0].title.startswith('Today') %}
+          {% if has_today %}
+          <button class="filter-pill active" data-admin-filter="today" type="button">
+            Today ({{ job_groups[0].jobs|length }})
+          </button>
+          <button class="filter-pill" data-admin-filter="all" type="button">
+            All ({{ jobs|length }})
+          </button>
+          {% else %}
+          <button class="filter-pill active" data-admin-filter="all" type="button">
+            All ({{ jobs|length }})
+          </button>
+          {% endif %}
+          <button class="filter-pill" data-admin-filter="unbatched" type="button">
+            Unbatched
+          </button>
+          {% for group in job_groups %}
+          {% if not (loop.first and has_today) %}
+          <button class="filter-pill" data-admin-filter="{{ group.date_key }}" type="button">
+            {{ group.title.split('·')[0].strip() }} ({{ group.jobs|length }})
+          </button>
+          {% endif %}
+          {% endfor %}
+        </nav>
+        {% endif %}
         {% for group in job_groups %}
         <div class="date-group" data-date="{{ group.date_key }}">
           <div class="date-separator">
@@ -99,7 +126,7 @@
           </div>
           <div class="job-grid">
             {% for job in group.jobs %}
-            <article class="job-card" data-job-id="{{ job.id }}">
+            <article class="job-card" data-job-id="{{ job.id }}" data-batched="{{ 'true' if job.batches else 'false' }}">
               <input class="job-select" type="checkbox" value="{{ job.id }}" />
               {% if job.batches %}
               <div class="card-badge-row">
